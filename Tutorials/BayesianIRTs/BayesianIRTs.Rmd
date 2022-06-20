@@ -1,0 +1,165 @@
+---
+title: "Baysian IRT based on "
+author: "Your Name"
+date: "The Date"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    number_sections: true
+    toc_depth: 3
+    toc_float:  
+      collapsed: false
+    fig_width: 9
+    fig_height: 6
+    
+---
+
+# Disclaimer
+
+This rmarkdown is replication (and some extensions) of the following publication:
+
+Bürkner, P.-C. (2021). Bayesian Item Response Modeling in R with brms and Stan. Journal of Statistical Software, 100(5), 1–54. https://doi.org/10.18637/jss.v100.i05
+
+Please use this original citation when you use the piece of code here.
+
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+options(max.print = 999999) # we will have large outputs
+
+# This script requires brms version 2.11.5 or higher to fully run.
+
+# The current release version of brms can be installed via
+# install.packages("brms")
+
+# The current developmental version of brms can be installed via
+# remotes::install_github("paul-buerkner/brms")
+
+
+# load required packages
+library("tidyverse")
+library("brms")
+# for comparison with brms
+library("lme4")
+library("TAM")
+
+# set ggplot theme
+theme_set(bayesplot::theme_default())
+
+# set rstan options
+rstan::rstan_options(auto_write = TRUE)
+options(mc.cores = 4)
+
+# create a "models" folder in the current working directory to store fitted
+# model objects for easier re-usage
+if (!dir.exists("models")) {
+  dir.create("models")
+}
+
+
+```
+
+# Data prep
+```{r}
+# Although I set a seed for all models, the results are only exactly
+# reproducible on the same operating system with the same C++ compiler (and
+# version) as well as the same version of Stan. 
+# Thus, when you run the code below, it will likely not produce exactly the
+# same results as shown in the paper. For the latter, I have used Windows 10,
+# The g++ compiler version 8.3.0 for C++ (shipped with Rtools 4) as well as
+# rstan 2.19.3 with StanHeaders 2.19.2. R version is 4.0.4.
+
+# ----------- Code for Section 5.1 ------------ Analysis of the VerbAgg data
+# set using dichotomous IRT models
+data("VerbAgg", package = "lme4")
+
+# get an overview of the data
+head(VerbAgg, 10)
+
+```
+
+# 1PL model
+
+```{r}
+
+# ---------- 1PL models ---------------------- specify a 1PL model in brms
+formula_va_1pl <- bf(r2 ~ 1 + (1 | item) + (1 | id))
+
+# specify some weakly informative priors
+prior_va_1pl <- prior("normal(0, 3)", class = "sd", group = "id") +
+  prior("normal(0, 3)", class = "sd", group = "item")
+
+# fit the 1PL model
+fit_va_1pl <- brm(formula = formula_va_1pl, data = VerbAgg, 
+  family = brmsfamily("bernoulli", "logit"), prior = prior_va_1pl, seed = 1234,
+  file = "models/fit_va_1pl",
+  backend = 'cmdstanr')
+
+
+
+```
+
+```{r}
+# obtain basic summaries
+summary(fit_va_1pl)
+```
+
+
+# Visualization
+
+```{r}
+# Figure 1
+plot(fit_va_1pl, ask = FALSE)
+```
+
+
+### Extracting random effects parameters
+
+```{r}
+# extract person parameters
+ranef_va_1pl <- ranef(fit_va_1pl)
+(person_pars_va_1pl <- ranef_va_1pl$id)
+
+# extract item parameters
+(item_pars_va_1pl <- coef(fit_va_1pl)$item)
+
+```
+
+
+```{r}
+# plot item parameters
+# Figure 2
+item_pars_va_1pl[, , "Intercept"] %>%
+  as_tibble() %>%
+  rownames_to_column() %>%
+  rename(item = "rowname") %>%
+  mutate(item = as.numeric(item)) %>%
+  ggplot(aes(item, Estimate, ymin = Q2.5, ymax = Q97.5)) +
+    geom_pointrange() +
+    coord_flip() + labs(x = "Item Number")
+
+```
+
+```{r}
+# plot person parameters
+# Figure 3
+person_pars_va_1pl[, , "Intercept"] %>%
+  as_tibble() %>%
+  rownames_to_column() %>%
+  arrange(Estimate) %>%
+  mutate(id = seq_len(n())) %>%
+  ggplot(aes(id, Estimate, ymin = Q2.5, ymax = Q97.5)) + 
+    geom_pointrange(alpha = 0.7) +
+    coord_flip() + labs(x = "Person Number (Sorted)")
+
+```
+
+
+
+
+# Session info
+```{r}
+sessionInfo()
+```
+
